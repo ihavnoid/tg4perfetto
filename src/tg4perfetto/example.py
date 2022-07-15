@@ -1,9 +1,7 @@
-# tg4perfetto
-Simple python library for generating your own perfetto traces for your application.  This is not an app instrumentation library!
+import sys
+from ._core import TraceGenerator
 
-
-Example code (see tg4perfetto/example.py for the code)
-
+if __name__ == "__main__":
     # Packets can be created out-of-order.  This is because perfetto is designed to process out-of-order traces
     # and reads all packets at once, rearranges them, and then visualizes it at once.
     tgen = TraceGenerator(sys.argv[1])
@@ -83,7 +81,5 @@ Example code (see tg4perfetto/example.py for the code)
     t1.close(500)
     t2.close(600)
 
-
-Example output:
-
-![Example screenshot](screenshot.png)
+    # not necessary, but anyway.
+    tgen.flush()

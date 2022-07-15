@@ -1,0 +1,23 @@
+[build-system]
+requires = ["hatchling", "protobuf"]
+build-backend = "hatchling.build"
+
+[project]
+name = "tg4perfetto"
+version = "0.0.1"
+authors = [
+  { name="Junhee Yoo", email="ihavnoid@yahoo.com" },
+]
+description = "A python project "
+readme = "README.md"
+license = { file="LICENSE" }
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/ihavnoid/tg4perfetto"
+"Bug Tracker" = "https://github.com/ihavnoid/tg4perfetto/issues"
