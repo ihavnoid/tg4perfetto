@@ -1,83 +1,12 @@
 from . import perfetto_trace_pb2 as pb2
 
-class CounterTrack:
-    def __init__(self, name, parent, tid):
-        self._parent = parent
-        self._tid = tid
-        self._name = name
-    def count(self, ts, value):
-        """ Add a count value on the track. """
-        self._parent._track_count(self._tid, ts, value)
-        return self
-
-class NormalTrack:
-    def __init__(self, name, parent, tid):
-        self._parent = parent
-        self._tid = tid
-        self._name = name
-    def open(self, ts, annotation, kwargs = None, flow = []):
-        """ Open a track. """
-        self._parent._track_open(self._tid, ts, annotation, kwargs, flow)
-        return self
-
-    def close(self, ts, flow = []):
-        """ Close a track.  The last 'open' call is closed """
-        self._parent._track_close(self._tid, ts, flow)
-        return self
-
-    def instant(self, ts, annotation, kwargs = None, flow = []):
-        """ Record an instant event. """
-        self._parent._track_instant(self._tid, ts, annotation, kwargs, flow)
-        return self
-
-class GroupTrack:
-    def __init__(self, name, parent, pid):
-        self._parent = parent
-        self._pid = pid
-        self._name = name
-
-    def create_track(self) -> NormalTrack:
-        """ Create a child track for this track."""
-        return self._parent._tid_packet(self._pid, self._name, 0)
-
-class Group:
-    def __init__(self, name, parent, pid):
-        self._parent = parent
-        self._pid = pid
-
-    def create_track(self, track_name : str) -> NormalTrack:
-        """ Create a normal track for this track."""
-        return self._parent._tid_packet(self._pid, track_name, 0)
-
-    def create_counter_track(self, track_name : str) -> CounterTrack:
-        """ Create a counter track.  Counter tracks can be used for recording int values."""
-        return self._parent._tid_packet(self._pid, track_name, 1)
-
-    def create_group(self, track_name : str) -> GroupTrack:
-        """ Create a group track.  Group tracks can be used for grouping normal tracks."""
-        return self._parent._tid_packet(self._pid, track_name, 2)
-
-    def open(self, ts : int, annotation : str, kwargs : dict = None, flow : list = []):
-        """ Open track. """
-        self._parent._track_open(self._pid, ts, annotation, kwargs, flow)
-
-    def close(self, ts : int, flow : list = []):
-        """ Close a track.  The last 'open' call is closed """
-        self._parent._track_close(self._pid, ts, flow)
-
-    def instant(self, ts : int, annotation : str, kwargs : dict = None, flow : list = []):
-        """ Record an instant event. """
-        self._parent._track_instant(self._pid, ts, annotation, kwargs, flow)
-
-
-class TraceGenerator:
+class _BaseTraceGenerator:
     def __init__(self, filename : str):
         """ Create a trace """
         self.__uuid__ = 1234567
-        self.__pid__ = 1
-        self.pid2uuid = {}
         self.interned_data = {}
         self.flush_threshold = 10000
+        self.list_max_size = 16
 
         self.trace = pb2.Trace()
         self.file = open(filename, "wb")
@@ -127,12 +56,12 @@ class TraceGenerator:
         self.flush()
         self.file.close()
 
-    def create_group(self, process_name : str, track_name : str = None):
+    def _pid_packet(self, pid, process_name : str, track_name : str = None):
         """ Create a group.  Each "group" comes with a default normal track (named track_name)."""
+        uuid = self.__uuid__
         pkt = self.trace.packet.add()
         pkt.timestamp = 0
-        pkt.track_descriptor.uuid = self.__uuid__
-        pid = self.__pid__
+        pkt.track_descriptor.uuid = uuid
         pkt.track_descriptor.process.pid = pid
         pkt.track_descriptor.process.process_name = process_name
         pkt.trusted_packet_sequence_id = 2
@@ -142,9 +71,7 @@ class TraceGenerator:
         else:
             pkt.track_descriptor.name = track_name
 
-        self.pid2uuid[pid] = pkt.track_descriptor.uuid
         self.__uuid__ += 1
-        self.__pid__ += 1
         
         # funnily enough, declaring a process and a track at the same time will get rid of the default track
         # if there is no trace in the track.  Unfortunately this changes the process track's name to "Process XXX"
@@ -158,44 +85,33 @@ class TraceGenerator:
         #self.__pid__ += 1
     
         self._flush_if_necessary()
-        return Group(process_name, self, pid)
 
-    def create_counter_track(self, track_name : str):
-        """ Create a global counter track """
-        return self._tid_packet(0, track_name, 1)
+        return uuid
 
     def _flush_if_necessary(self):
         if len(self.trace.packet) > self.flush_threshold:
             self.flush()
 
-    def _tid_packet(self, parent_pid, process_name, track_type):
+    def _tid_packet(self, my_pid, parent_uuid, process_name, track_type):
         pkt = self.trace.packet.add()
 
         pkt.timestamp = 0
         pkt.trusted_packet_sequence_id = 2
         pkt.sequence_flags = 2
-        pkt.track_descriptor.uuid = self.__uuid__
-        tid = self.__pid__
-        self.pid2uuid[self.__pid__] = self.__uuid__
+        uuid = self.__uuid__
+
+        pkt.track_descriptor.uuid = uuid
         self.__uuid__ += 1
-        self.__pid__ += 1
         pkt.track_descriptor.name = process_name
 
-        if parent_pid != 0:
-            pkt.track_descriptor.parent_uuid = self.pid2uuid[parent_pid]
+        if parent_uuid != 0:
+            pkt.track_descriptor.parent_uuid = parent_uuid
     
-        try:
-            if track_type == 1:
-                pkt.track_descriptor.counter.categories.append("dummy")
-                return CounterTrack(process_name, self, tid)
-            elif track_type == 0:
-                return NormalTrack(process_name, self, tid)
-            elif track_type == 2:
-                return GroupTrack(process_name, self, tid)
-            else:
-                assert False
-        finally:
-            self._flush_if_necessary()
+        if track_type == 1:
+            pkt.track_descriptor.counter.categories.append("dummy")
+        self._flush_if_necessary()
+
+        return uuid
     
     def _get_iid_for(self, pkt, name):
         if name in self.interned_data:
@@ -234,9 +150,14 @@ class TraceGenerator:
                     x.nested_type = pb2.DebugAnnotation.NestedValue.NestedType.DICT
                 elif isinstance(v, list):
                     def set_nested_list(x, vv):
-                        for v in vv:
-                            vt = x.array_values.add()
-                            set_single(vt, v)
+                        for i,v in zip(range(len(vv)), vv):
+                            if i == self.list_max_size:
+                                vt = x.array_values.add()
+                                set_single(vt, "... ({} more items)".format(len(vv) - i))
+                                break
+                            else:
+                                vt = x.array_values.add()
+                                set_single(vt, v)
                     set_nested_list(x, v)
                     x.nested_type = pb2.DebugAnnotation.NestedValue.NestedType.ARRAY
                 else:
@@ -248,11 +169,16 @@ class TraceGenerator:
                 set_single(x, v)
 
     def _add_debug_annotation_new(self, d, kwargs):
+        cnt = 0
         for k,v in kwargs.items():
-            assert(isinstance(k, str))
-
+            cnt += 1
             x = d.add()
-            x.name = k
+            if cnt == self.list_max_size:
+                x.name = "..."
+                x.string_value = "({} more items)".format(len(kwargs) - cnt)
+                break
+
+            x.name = str(k)
             def set_single(x, v):
                 if isinstance(v, str):
                     x.string_value = v
@@ -263,12 +189,25 @@ class TraceGenerator:
                 elif isinstance(v, float):
                     x.double_value = v
                 elif isinstance(v, dict):
-                    self._add_debug_annotation_new(x.dict_entries, v)
-                elif isinstance(v, list):
-                    for vv in v:
-                        set_single(x.array_values.add(), vv)
+                    if len(v) == 0:
+                        x.string_value = "[empty]"
+                    else:
+                        self._add_debug_annotation_new(x.dict_entries, v)
+                elif isinstance(v, list) or isinstance(v, tuple):
+                    if len(v) == 0:
+                        x.string_value = "[empty]"
+                    else:
+                        for i,vv in zip(range(len(v)), v):
+                            if i == self.list_max_size:
+                                set_single(x.array_values.add(), "... ({} more items)".format(len(v) - i))
+                                break
+                            # for some reason, perfetto ui crashes on nested lists.
+                            # add a dummy dictionary here
+                            if isinstance(vv, list) or isinstance(vv, tuple):
+                                vv = {"array" : vv}
+                            set_single(x.array_values.add(), vv)
                 else:
-                    assert False
+                    x.string_value = str(type(v))
             set_single(x, v)
 
     def _add_debug_annotation(self, d, kwargs):
@@ -281,10 +220,9 @@ class TraceGenerator:
 
         # end code
      
-    def _track_instant(self, pid, ts, annotation, kwargs, flow):
+    def _track_instant(self, uuid, ts, annotation, kwargs, flow):
         pkt = self.trace.packet.add()
 
-        uuid = self.pid2uuid[pid]
         pkt.timestamp = ts
         pkt.trusted_packet_sequence_id = 2
         pkt.sequence_flags = 2
@@ -302,11 +240,9 @@ class TraceGenerator:
         self._flush_if_necessary()
                    
 
-    def _track_open(self, pid, ts, annotation, kwargs, flow):
+    def _track_open(self, uuid, ts, annotation, kwargs, flow):
         pkt = self.trace.packet.add()
 
-        uuid = self.pid2uuid[pid]
-    
         pkt.timestamp = ts
         pkt.track_event.name_iid = self._get_iid_for(pkt, annotation)
         pkt.trusted_packet_sequence_id = 2
@@ -322,10 +258,9 @@ class TraceGenerator:
 
         self._flush_if_necessary()
         
-    def _track_close(self, pid, ts, flow):
+    def _track_close(self, uuid, ts, flow):
         pkt = self.trace.packet.add()
 
-        uuid = self.pid2uuid[pid]
         pkt.trusted_packet_sequence_id = 2
         pkt.sequence_flags = 2
         pkt.timestamp = ts
@@ -336,10 +271,9 @@ class TraceGenerator:
 
         self._flush_if_necessary()
     
-    def _track_count(self, pid, ts, value):
+    def _track_count(self, uuid, ts, value):
         pkt = self.trace.packet.add()
 
-        uuid = self.pid2uuid[pid]
         pkt.timestamp = ts
         pkt.trusted_packet_sequence_id = 2
         pkt.sequence_flags = 2
@@ -348,6 +282,4 @@ class TraceGenerator:
         pkt.track_event.counter_value = value
 
         self._flush_if_necessary()
-
-
 

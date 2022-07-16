@@ -1,5 +1,5 @@
 import sys
-from ._core import TraceGenerator
+from . import TraceGenerator
 
 if __name__ == "__main__":
     # Packets can be created out-of-order.  This is because perfetto is designed to process out-of-order traces
@@ -57,7 +57,7 @@ if __name__ == "__main__":
     # very complex annotations!
     tid2.instant(700, "ADE2", {
         "aaa": "abc",
-        "ccc": [1, 2, 3, 4, "a", "b", {"abcdef" : "fdsa", "ggg": True}],
+        "ccc": [[1], 2, 3, 4, "a", "b", {"abcdef" : "fdsa", "ggg": True}],
         "eee" : {
             "aaa": "abc",
             "ccc": True,

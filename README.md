@@ -2,6 +2,57 @@
 Simple python library for generating your own perfetto traces for your application.  This is not an app instrumentation library!
 
 
+## Python application tracing
+Example code (see tg4perfetto/example_profile.py for the code)
+    import tg4perfetto
+    import threading
+    
+    # Trace function, and records function args
+    # (careful, this can be quite huge)
+    @tg4perfetto.trace_func_args
+    def merge(x, x1, x2):
+        # omitted here
+    
+    def merge_sort_threaded(x):
+        t = threading.Thread(target=merge_sort, args=(x,))
+        tg4perfetto.instant("INVOKE_THREAD")
+        t.start()
+        return (x, t)
+    
+    # Trace function call, don't record function args
+    @tg4perfetto.trace_func
+    def merge_sort(x):
+        l = len(x)
+        if l < 4096: return sorted(x)
+        if l < 40000:
+            x1 = merge_sort(x[:int(l/2)])
+            x2 = merge_sort(x[int(l/2):])
+        else:
+            x1, t1 = merge_sort_threaded(x[:int(l/2)])
+            x2, t2 = merge_sort_threaded(x[int(l/2):])
+            t1.join()
+            t2.join()
+        return merge(x, x1, x2)
+    
+    if __name__ == "__main__":
+        # Trace capture is running until we exit scope of this "with" statement
+        with tg4perfetto.open("xxx.perfetto-trace"):
+
+            # Creates a "custom" track
+            with tg4perfetto.trace('SORT'):
+                xarray = [ (17 * x + 8) % 100 for x in range(100000) ]
+                xarray = merge_sort(xarray)
+    
+            with tg4perfetto.trace('VALIDATE'):
+                # Instant event which is marked as an "arrow" on perfetto
+                tg4perfetto.instant("CHECKING", {"final_result": xarray})
+                for i in range(len(xarray)-1):
+                    assert xarray[i] <= xarray[i+1]
+                print("Done")
+
+This will generate a trace file named "xxx.perfetto-trace" which can be read from perfetto.
+
+## Custom packet generation
 Example code (see tg4perfetto/example.py for the code)
 
     # Packets can be created out-of-order.  This is because perfetto is designed to process out-of-order traces
