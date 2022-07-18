@@ -13,9 +13,13 @@ Example code (see tg4perfetto/example_profile.py for the code)
     def merge(x, x1, x2):
         # omitted here
     
+    def merge_sort_wrapper(x, flow_id):
+        tg4perfetto.instant("START_THREAD", incoming_flow_ids = [flow_id])
+        return merge_sort(x)
+
     def merge_sort_threaded(x):
-        t = threading.Thread(target=merge_sort, args=(x,))
-        tg4perfetto.instant("INVOKE_THREAD")
+        flow_ids = tg4perfetto.instant("INVOKE_THREAD", num_outgoing_flow_ids = 1)
+        t = threading.Thread(target=merge_sort_wrapper, args=(x,flow_ids[0]))
         t.start()
         return (x, t)
     
@@ -39,11 +43,12 @@ Example code (see tg4perfetto/example_profile.py for the code)
         with tg4perfetto.open("xxx.perfetto-trace"):
 
             # Creates a "custom" track
-            with tg4perfetto.trace('SORT'):
+            with tg4perfetto.trace('SORT').get_outgoing_flow_ids(1) as out_flow_id:
                 xarray = [ (17 * x + 8) % 100 for x in range(100000) ]
                 xarray = merge_sort(xarray)
+                p = out_flow_id[0]
     
-            with tg4perfetto.trace('VALIDATE'):
+            with tg4perfetto.trace('VALIDATE').set_incoming_flow_ids([p]):
                 # Instant event which is marked as an "arrow" on perfetto
                 tg4perfetto.instant("CHECKING", {"final_result": xarray})
                 for i in range(len(xarray)-1):
