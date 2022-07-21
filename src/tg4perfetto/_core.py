@@ -1,10 +1,14 @@
 from . import perfetto_trace_pb2 as pb2
 
+# Set this to true if you want to dump the protobuf results to stdout.  For debugging.
+print_proto = False
+
 class _BaseTraceGenerator:
     def __init__(self, filename : str):
         """ Create a trace """
         self.__uuid__ = 1234567
         self.interned_data = {}
+        self.interned_source = {}
         self.flush_threshold = 10000
         self.list_max_size = 16
 
@@ -47,7 +51,8 @@ class _BaseTraceGenerator:
 
     def flush(self):
         """ Flush trace.  This creates a perfetto trace packet and writes to disk. """
-        # print(self.trace)
+        if print_proto:
+            print(self.trace)
         self.file.write(self.trace.SerializeToString())
         self.file.flush()
         self.trace = pb2.Trace()
@@ -220,7 +225,7 @@ class _BaseTraceGenerator:
 
         # end code
      
-    def _track_instant(self, uuid, ts, annotation, kwargs, flow):
+    def _track_instant(self, uuid, ts, annotation, kwargs, flow, caller = None):
         pkt = self.trace.packet.add()
 
         pkt.timestamp = ts
@@ -237,10 +242,27 @@ class _BaseTraceGenerator:
         for x in flow:
             pkt.track_event.flow_ids.append(x)
 
+        if caller is not None:
+            file,line,name = caller
+            iid = self._get_source_iid_for(pkt, file, name, line)
+            pkt.track_event.source_location_iid = iid
+
         self._flush_if_necessary()
                    
 
-    def _track_open(self, uuid, ts, annotation, kwargs, flow):
+    def _get_source_iid_for(self, pkt, file, name, line):
+        if (file, name, line) in self.interned_source:
+            return self.interned_source[(file, name, line)]
+        ev = pkt.interned_data.source_locations.add()
+        ev.file_name = file
+        ev.function_name = name
+        ev.line_number = line
+        ev.iid = len(self.interned_source) + 1
+        self.interned_source[(file, name, line)] = ev.iid
+
+        return ev.iid
+
+    def _track_open(self, uuid, ts, annotation, kwargs, flow, caller = None):
         pkt = self.trace.packet.add()
 
         pkt.timestamp = ts
@@ -255,6 +277,11 @@ class _BaseTraceGenerator:
             self._add_debug_annotation(pkt.track_event.debug_annotations, kwargs)
         for x in flow:
             pkt.track_event.flow_ids.append(x)
+
+        if caller is not None:
+            file,line,name = caller
+            iid = self._get_source_iid_for(pkt, file, name, line)
+            pkt.track_event.source_location_iid = iid
 
         self._flush_if_necessary()
         

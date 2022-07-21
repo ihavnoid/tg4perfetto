@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "tg4perfetto"
-version = "0.0.3"
+version = "0.0.4"
 authors = [
   { name="Junhee Yoo", email="ihavnoid@yahoo.com" },
 ]
