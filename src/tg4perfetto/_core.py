@@ -129,51 +129,7 @@ class _BaseTraceGenerator:
         self.interned_data[name] = ev.iid
         return ev.iid
 
-    def _add_debug_annotation_old(self, d, kwargs):
-        for k,v in kwargs.items():
-            assert(isinstance(k, str))
-
-            x = d.add()
-            x.name = k
-            def set_single(x, v):
-                if isinstance(v, str):
-                    x.string_value = v
-                elif isinstance(v, bool):
-                    x.bool_value = v
-                elif isinstance(v, int):
-                    x.int_value = v
-                elif isinstance(v, float):
-                    x.double_value = v
-                elif isinstance(v, dict):
-                    # Try the older, deprecated version first.  If this doesn't work, use the code below (newer version)
-                    def set_nested_dict(x, vv):
-                        for k,v in vv.items():
-                            x.dict_keys.append(k)
-                            vt = x.dict_values.add()
-                            set_single(vt, v)
-                    set_nested_dict(x, v)
-                    x.nested_type = pb2.DebugAnnotation.NestedValue.NestedType.DICT
-                elif isinstance(v, list):
-                    def set_nested_list(x, vv):
-                        for i,v in zip(range(len(vv)), vv):
-                            if i == self.list_max_size:
-                                vt = x.array_values.add()
-                                set_single(vt, "... ({} more items)".format(len(vv) - i))
-                                break
-                            else:
-                                vt = x.array_values.add()
-                                set_single(vt, v)
-                    set_nested_list(x, v)
-                    x.nested_type = pb2.DebugAnnotation.NestedValue.NestedType.ARRAY
-                else:
-                    assert False
-
-            if isinstance(v, dict) or isinstance(v, list):
-                set_single(x.nested_value, v)
-            else:
-                set_single(x, v)
-
-    def _add_debug_annotation_new(self, d, kwargs):
+    def _add_debug_annotation(self, d, kwargs):
         cnt = 0
         for k,v in kwargs.items():
             cnt += 1
@@ -197,7 +153,7 @@ class _BaseTraceGenerator:
                     if len(v) == 0:
                         x.string_value = "[empty]"
                     else:
-                        self._add_debug_annotation_new(x.dict_entries, v)
+                        self._add_debug_annotation(x.dict_entries, v)
                 elif isinstance(v, list) or isinstance(v, tuple):
                     if len(v) == 0:
                         x.string_value = "[empty]"
@@ -211,19 +167,12 @@ class _BaseTraceGenerator:
                             if isinstance(vv, list) or isinstance(vv, tuple):
                                 vv = {"array" : vv}
                             set_single(x.array_values.add(), vv)
+                elif hasattr(v, "__dict__"):
+                    set_single(x, v.__dict__())
                 else:
                     x.string_value = str(type(v))
+
             set_single(x, v)
-
-    def _add_debug_annotation(self, d, kwargs):
-        return self._add_debug_annotation_new(d, kwargs)
-
-        # some older perfettos (circa early 2021) don't support the new debug annotation packet type
-        # in that case, enable this code below instead of the one above:
-
-        # return self._add_debug_annotation_old(d, kwargs)
-
-        # end code
      
     def _track_instant(self, uuid, ts, annotation, kwargs, flow, caller = None):
         pkt = self.trace.packet.add()
