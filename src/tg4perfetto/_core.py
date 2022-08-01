@@ -131,6 +131,9 @@ class _BaseTraceGenerator:
 
     def _add_debug_annotation(self, d, kwargs):
         cnt = 0
+        if hasattr(kwargs, "__dict__"):
+            kwargs = kwargs.__dict__
+
         for k,v in kwargs.items():
             cnt += 1
             x = d.add()
@@ -167,8 +170,6 @@ class _BaseTraceGenerator:
                             if isinstance(vv, list) or isinstance(vv, tuple):
                                 vv = {"array" : vv}
                             set_single(x.array_values.add(), vv)
-                elif hasattr(v, "__dict__"):
-                    set_single(x, v.__dict__())
                 else:
                     x.string_value = str(type(v))
 
