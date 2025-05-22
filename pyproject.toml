@@ -1,23 +1,30 @@
 [build-system]
-requires = ["hatchling", "protobuf"]
-build-backend = "hatchling.build"
+requires = ["setuptools", "setuptools-protobuf"]
+
+[tool.setuptools.package-data]
+tg4perfetto = ["*.py", "*.proto"]
+
+[tool.setuptools-protobuf]
+protobufs = ["src/tg4perfetto/perfetto_trace.proto"]
 
 [project]
 name = "tg4perfetto"
-version = "0.0.4"
+version = "0.0.5"
 authors = [
   { name="Junhee Yoo", email="ihavnoid@yahoo.com" },
 ]
-description = "A python project "
+description = "A trace generator library for creating perfetto files"
 readme = "README.md"
-license = { file="LICENSE" }
 requires-python = ">=3.7"
 classifiers = [
     "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",
 ]
+license = "Apache-2.0"
+dependencies = ["protobuf"]
 
 [project.urls]
 "Homepage" = "https://github.com/ihavnoid/tg4perfetto"
 "Bug Tracker" = "https://github.com/ihavnoid/tg4perfetto/issues"
+
+
