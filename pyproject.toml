@@ -9,7 +9,7 @@ protobufs = ["src/tg4perfetto/perfetto_trace.proto"]
 
 [project]
 name = "tg4perfetto"
-version = "0.0.5"
+version = "0.0.6"
 authors = [
   { name="Junhee Yoo", email="ihavnoid@yahoo.com" },
 ]
